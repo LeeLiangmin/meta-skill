@@ -1,0 +1,224 @@
+{
+  "skill_name": "skill-evaluator",
+  "skill_path": ".opencode/skills/skill-evaluator/SKILL.md",
+  "generated_at": "2026-06-17T22:00:00+08:00",
+  "test_cases": [
+    {
+      "id": "TC-001",
+      "name": "基线：完整评估流程",
+      "description": "验证 skill-evaluator 在获得完整三类来源（skill + session + external）时按 0-4 步流程执行，产出一份有证据支撑的评估报告",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "normal",
+      "prompt": "请评估以下被测 skill：.opencode/skills/skill-digest/SKILL.md。\n\n我们提供了一份执行 session 记录，路径为 .opencode/skills/skill-digest-eval/sample-session.jsonl，里面是 skill-digest 的一次真实运行。请阅读该 session。\n\n外部事实来源：请实际运行 `python3 --version` 确认当前 Python 版本（skill-digest 的脚本若依赖 Python 则与此相关）。\n\n请按 skill-evaluator 的工作流 0-4 步完成评估：先确认来源，建证据账本，按维度评估，校验关键结论，最后机检和渲染报告。将产物放在 .opencode/skills/skill-digest-eval/ 下。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-001", "description": "先 read_file 确认被测 skill .opencode/skills/skill-digest/SKILL.md 存在且可读", "severity": "must" },
+        { "id": "EB-002", "description": "遍历被测 skill 引用的 references/scripts/assets 目录确认其存在性", "severity": "must" },
+        { "id": "EB-003", "description": "在 <skill-name>-eval/ 目录下创建 evidence.json，sources 列表包含三类来源（skill/session/external）及其定位", "severity": "must" },
+        { "id": "EB-004", "description": "evidence.json 中每条 evidence 均含 source_id、locator、excerpt 字段", "severity": "must" },
+        { "id": "EB-005", "description": "按 evaluation-dimensions.md 中的七个维度逐一评估，产出 findings.json", "severity": "must" },
+        { "id": "EB-006", "description": "每条 finding 的 statement 引用至少一个 evidence_id，且 severity 为 high/medium/low 之一", "severity": "must" },
+        { "id": "EB-007", "description": "inferred 类型的 finding 包含 reasoning 推理链", "severity": "must" },
+        { "id": "EB-008", "description": "高严重度（high）finding 经过独立校验，verification.method 为 subagent 或 fresh_eyes，result 为 confirmed/refuted/inconclusive", "severity": "must" },
+        { "id": "EB-009", "description": "渲染报告前先运行 check_report.py 进行机检", "severity": "must" },
+        { "id": "EB-010", "description": "产出最终 report.md，报告包含结论摘要、来源表、方法学、按维度发现、盲区、改进建议和证据账本附录", "severity": "must" },
+        { "id": "EB-011", "description": "verdict 总评段落点名支撑结论的核心 finding IDs（summary_finding_ids）", "severity": "must" },
+        { "id": "EB-012", "description": "盲区（gaps）明确列出未评估项及原因", "severity": "must" }
+      ]
+    },
+    {
+      "id": "TC-002",
+      "name": "第0步：来源确认",
+      "description": "验证 skill-evaluator 第 0 步正确确认三类来源的存在性，对不存在或不可读的来源记录为 missing_sources",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "normal",
+      "prompt": "请评估被测 skill .opencode/skills/skill-digest/SKILL.md。\n\n我们只提供了被测 skill 本身——没有执行 session，也没有外部事实来源。\n\n请按 skill-evaluator 第 0 步工作：先确认被测 skill 路径可读及其引用文件是否存在，然后将来源情况如实记录。对于缺失的 session 来源，请在 evidence.json 中记录为 missing_sources，并在 findings 中标注相关维度为\"未评估——缺少 session\"。把产物放在 .opencode/skills/skill-digest-eval/ 下。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-013", "description": "read_file 确认被测 skill .opencode/skills/skill-digest/SKILL.md 存在可读", "severity": "must" },
+        { "id": "EB-014", "description": "检查被测 skill 引用的 references/scripts/assets 是否存在", "severity": "must" },
+        { "id": "EB-015", "description": "evidence.json 的 sources 列表中 session 和 external 来源未被编造——若未提供则记入 missing_sources", "severity": "must" },
+        { "id": "EB-016", "description": "需要 session 的评估维度（execution_fidelity/outcome_quality/efficiency）在 findings 或报告中标注\"未评估——缺少 session\"", "severity": "must" },
+        { "id": "EB-017", "description": "报告方法学一节如实说明本次评估范围（仅静态评估）", "severity": "should" }
+      ]
+    },
+    {
+      "id": "TC-003",
+      "name": "第1步：证据账本",
+      "description": "验证 skill-evaluator 能从被测 skill 中正确抽取原子事实，写成的 evidence.json 符合 schema 且零判断",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "normal",
+      "prompt": "请仅执行 skill-evaluator 的第 1 步：为被测 skill .opencode/skills/skill-digest/SKILL.md 建立证据账本。\n\n只做这一步——抽取原子事实写入 evidence.json，不要跳到后面的维度评估或报告渲染。\n\n要求：\n- 每条 evidence 一个事实，用 source_id + locator + excerpt 精确记录\n- 措辞中立、零判断——只写\"skill 第 L12 行写着 X\"，不写\"这是问题\"\n- 每条 evidence 的 locator 必须有行号定位（如 L40-45）\n- 保持 excerpt 简短精确\n\n产物路径：.opencode/skills/skill-digest-eval/evidence.json",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-018", "description": "仅建立 evidence.json，没有跳到维度评估或生成报告", "severity": "must" },
+        { "id": "EB-019", "description": "每条 evidence 含 id、source_id、locator（含行号）、excerpt 字段", "severity": "must" },
+        { "id": "EB-020", "description": "evidence 的 source_id 指向已在 sources 列表中声明的来源", "severity": "must" },
+        { "id": "EB-021", "description": "每条 evidence 只记录一个事实（如 skill 某一行的原文摘录），不混合多个事实", "severity": "must" },
+        { "id": "EB-022", "description": "evidence 措辞中立：不出现\"问题\"\"错误\"\"做得好\"等判断词", "severity": "must" },
+        { "id": "EB-023", "description": "excerpt 简短（通常一句话/几行原文），非大段复制", "severity": "should" }
+      ]
+    },
+    {
+      "id": "TC-004",
+      "name": "第3步：高严重度校验",
+      "description": "验证 skill-evaluator 对高严重度发现启用独立校验（subagent 或 fresh_eyes），并将校验结果记回 evidence.json",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "normal",
+      "prompt": "请对被测 skill .opencode/skills/skill-digest/SKILL.md 执行评估。\n\n我们提供一份执行 session：.opencode/skills/skill-digest-eval/sample-session.jsonl。\n\n重点验证 skill-evaluator 的第 3 步（校验关键结论）。请确保：\n1. 完成 evidence.json 和 findings.json\n2. 识别出至少一条高严重度（high）发现\n3. 对该高严重度发现启用独立校验——给 subagent 只提供原始来源片段和一个精确的是非问题，不告诉 subagent 你的结论\n4. 将校验结果（confirmed/refuted/inconclusive）及 subagent 找到的证据记回 evidence.json\n5. 在对应 finding 的 verification 字段填写 method: \"subagent\", result, evidence_ids\n\n产物放在 .opencode/skills/skill-digest-eval/ 下。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-024", "description": "识别出至少一条高严重度（severity: high）finding", "severity": "must" },
+        { "id": "EB-025", "description": "高严重度 finding 的 verification.performed 为 true，method 为 subagent 或 fresh_eyes", "severity": "must" },
+        { "id": "EB-026", "description": "给 subagent 的校验 prompt 只含原始材料片段 + 精确是非问题，不含评估者自己的结论", "severity": "must" },
+        { "id": "EB-027", "description": "校验结果（confirmed/refuted/inconclusive）写回 finding 的 verification.result", "severity": "must" },
+        { "id": "EB-028", "description": "校验产生的证据（含 subagent 结论和依据）作为新条目记入 evidence.json，note 注明来自校验", "severity": "must" }
+      ]
+    },
+    {
+      "id": "TC-005",
+      "name": "第4步：机检后渲染",
+      "description": "验证 skill-evaluator 先运行 check_report.py 机检，通过后才渲染 report.md；机检不通过则拒绝渲染",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "normal",
+      "prompt": "请对被测 skill .opencode/skills/skill-digest/SKILL.md 完成完整评估流程到第 4 步。\n\n我们提供一份执行 session：.opencode/skills/skill-digest-eval/sample-session.jsonl。\n\n关键验证点：\n- 在渲染 report.md 之前，必须先运行 `python3 scripts/check_report.py <path>/evidence.json <path>/findings.json`\n- 机检通过后才调用 `python3 scripts/render_report.py` 渲染报告\n- 如果机检不通过，必须先回头补齐证据或修正 findings，不强行渲染\n- 最终 report.md 中每条引用 [Ex] 均可在 evidence.json 中找到\n\n产物放在 .opencode/skills/skill-digest-eval/ 下。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-029", "description": "渲染 report.md 前实际执行了 check_report.py（可从 tool_call 或日志中确认）", "severity": "must" },
+        { "id": "EB-030", "description": "check_report.py 退出码 0（通过）后才执行 render_report.py", "severity": "must" },
+        { "id": "EB-031", "description": "最终 report.md 存在且包含所有必要章节（结论/来源/方法学/发现/盲区/建议/附录）", "severity": "must" },
+        { "id": "EB-032", "description": "check_report.py 报告错误时不跳过直接渲染（不会出现\"机检未通过但仍有 report.md\"的情况）", "severity": "should" }
+      ]
+    },
+    {
+      "id": "TC-006",
+      "name": "压力：缺失 session",
+      "description": "验证 skill-evaluator 在只有被测 skill 静态文件、没有 session 时能正确处理：标注缺失维度、不脑补执行情况",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "pressure",
+      "prompt": "请评估被测 skill .opencode/skills/skill-digest/SKILL.md。我们只有这个 skill 文件本身，没有执行 session，也没有外部事实来源。\n\n请完整执行评估流程。关键：\n- 不要脑补运行情况——没有 session 就不能评 execution_fidelity、outcome_quality、efficiency\n- 在 findings 中明确标注这些维度为\"未评估——缺少 session\"\n- 在 gaps 中列出缺失的 session\n- 报告中如实说明本次是仅静态评估\n\n产物放在 .opencode/skills/skill-digest-eval/ 下。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-033", "description": "missing_sources 中记录了 session 缺失", "severity": "must" },
+        { "id": "EB-034", "description": "需要 session 才能评估的维度（execution_fidelity、outcome_quality、efficiency）在 findings 或报告中标注\"未评估——缺少 session\"", "severity": "must" },
+        { "id": "EB-035", "description": "没有编造关于运行情况的结论（如\"执行保真度好/差\"这类需要 session 才能说的结论）", "severity": "must" },
+        { "id": "EB-036", "description": "report.md 的方法学或范围一节说明了评估范围仅限于静态评估", "severity": "should" },
+        { "id": "EB-037", "description": "主动提出可补充一次运行来补全评估（按第 0 步的要求）", "severity": "may" }
+      ]
+    },
+    {
+      "id": "TC-007",
+      "name": "压力：空被测 skill",
+      "description": "验证 skill-evaluator 处理被测 skill 文件几乎为空（只有 frontmatter）时的行为：能正常完成评估流程，相关维度呈现相应结论",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "pressure",
+      "prompt": "请评估被测 skill .opencode/skills/skill-evaluator-tests/fixtures/empty-skill/SKILL.md。这个 skill 几乎为空（只有 frontmatter 的 name 和 description，没有正文内容、没有 references、没有 scripts、没有 assets）。\n\n请完整执行评估流程，产物放在 .opencode/skills/skill-evaluator-tests/fixtures/empty-skill-eval/ 下。\n\n重点关注：\n- consistency_completeness 维度应记录 skill 主体内容缺失\n- 不要因为内容少就跳过任何工作流步骤\n- 每一条关于\"内容缺失\"的发现仍要有引用证据（如 SKILL.md 某几行为空）",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-038", "description": "即便被测 skill 内容极少，仍然完成 0-4 步全流程", "severity": "must" },
+        { "id": "EB-039", "description": "evidence.json 中记录了被测 skill 正文为空这一事实（附行号定位）", "severity": "must" },
+        { "id": "EB-040", "description": "consistency_completeness 维度的发现引用了 evidence.json 中关于内容缺失的证据", "severity": "must" },
+        { "id": "EB-041", "description": "report.md 的 verdict 基于实际发现（不会出现\"通过\"这类不合理的结论）", "severity": "should" }
+      ]
+    },
+    {
+      "id": "TC-008",
+      "name": "压力：引用不存在的文件",
+      "description": "验证 skill-evaluator 在被测 skill 引用了不存在的 reference/script 时能检测并记录为内部不一致",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "pressure",
+      "prompt": "请评估被测 skill .opencode/skills/skill-evaluator-tests/fixtures/broken-refs-skill/SKILL.md。这个 skill 在其正文中引用了一个不存在的 reference 文件 references/nonexistent.md 和一个不存在的脚本 scripts/missing.py。\n\n请完整执行评估流程，产物放在 .opencode/skills/skill-evaluator-tests/fixtures/broken-refs-skill-eval/ 下。\n\n重点：consistency_completeness 维度应记录这些断头引用，每条发现引用证据（skill 声称引用 + 文件系统确认不存在）。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-042", "description": "evidence.json 中记录了 skill 声称引用的文件和文件系统上该文件不存在的事实（各为独立 E 条目）", "severity": "must" },
+        { "id": "EB-043", "description": "consistency_completeness 维度有发现指出断头引用，status 为 observed 或 inferred，引用上述 E 条目", "severity": "must" },
+        { "id": "EB-044", "description": "没有因文件不存在而中断评估流程", "severity": "must" }
+      ]
+    },
+    {
+      "id": "TC-009",
+      "name": "压力：自定义模板",
+      "description": "验证 skill-evaluator 使用自定义占位符模板渲染报告，并能正确处理不认识的占位符（告警但不中断）",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "pressure",
+      "prompt": "请评估被测 skill .opencode/skills/skill-digest/SKILL.md。\n\n我们提供一份执行 session：.opencode/skills/skill-digest-eval/sample-session.jsonl。\n\n渲染报告时请使用自定义模板 .opencode/skills/skill-evaluator/assets/report-template-blank.md（这是一个占位符空白模板）。\n\n执行命令：\n  python3 scripts/render_report.py evidence.json findings.json -o report.md --template .opencode/skills/skill-evaluator/assets/report-template-blank.md\n\n注意：如果模板里有多余占位符脚本不认识，会告警但不中断——这是正常行为。\n\n产物放在 .opencode/skills/skill-digest-eval/ 下。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-045", "description": "渲染时传入了 --template 参数指向自定义模板", "severity": "must" },
+        { "id": "EB-046", "description": "report.md 按自定义模板结构生成（结构不同于默认模板），但包含所有必要占位符的填充内容", "severity": "must" },
+        { "id": "EB-047", "description": "每个 finding 的 [Ex] 引用均能在 evidence.json 中找到", "severity": "must" }
+      ]
+    },
+    {
+      "id": "TC-010",
+      "name": "压力：自由文体模板加校验",
+      "description": "验证 skill-evaluator 走自由文体模板路径（C）：导出片段、手填、对成品运行 check_citations.py",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "pressure",
+      "prompt": "请评估被测 skill .opencode/skills/skill-digest/SKILL.md。\n\n我们提供一份执行 session：.opencode/skills/skill-digest-eval/sample-session.jsonl。\n\n渲染报告请走自由文体模板路径（references/report-templates.md 路径 C）：\n1. 先用 --emit-fragments 导出 fragments.json\n2. 将片段逐段填入最终报告（可以在代码里直接构建或以 markdown 拼接）\n3. 填入时保留每个 [Ex] 引用，不丢失、不新增无证据结论\n4. 对最终成品运行 check_citations.py 进行引用校验\n\n产物放在 .opencode/skills/skill-digest-eval/ 下。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-048", "description": "运行了 render_report.py --emit-fragments 导出片段", "severity": "must" },
+        { "id": "EB-049", "description": "片段中的 [Ex] 引用被保留在最终报告成品中", "severity": "must" },
+        { "id": "EB-050", "description": "对最终报告成品运行了 check_citations.py，退出码 0", "severity": "must" },
+        { "id": "EB-051", "description": "最终报告成品没有新增无证据支撑的结论性内容", "severity": "should" }
+      ]
+    },
+    {
+      "id": "TC-011",
+      "name": "对照：该拒绝 skill-creator",
+      "description": "验证当用户实际想创建/编写新 skill 时，skill-evaluator 能识别属于\"何时不用本 skill\"，并引导使用 skill-creator",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "control",
+      "prompt": "帮我创建一个新的 skill 叫 skill-archiver，用于归档旧 skill。我希望它能把不再使用的 skill 打包压缩并存到归档目录。请帮我写好 SKILL.md。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-052", "description": "识别出用户意图是创建新 skill 而非评估已有 skill，不使用 skill-evaluator 工作流", "severity": "should" },
+        { "id": "EB-053", "description": "引导用户使用 skill-creator（或至少提及创建 skill 应使用 skill-creator 而非 skill-evaluator）", "severity": "should" },
+        { "id": "EB-054", "description": "不会启动 evidence.json / findings.json / 维度评估等 skill-evaluator 特有流程", "severity": "must" }
+      ]
+    },
+    {
+      "id": "TC-012",
+      "name": "探索：inconclusive 校验",
+      "description": "验证当独立校验返回 inconclusive 时，skill-evaluator 安全降级 finding（降低严重度并注明证据不足），而非把 inconclusive 当 confirmed 用",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "exploratory",
+      "prompt": "请评估被测 skill .opencode/skills/skill-evaluator-tests/fixtures/ambiguous-skill/SKILL.md。\n\n我们提供一份执行 session：.opencode/skills/skill-evaluator-tests/fixtures/ambiguous-skill-eval/sample-session.jsonl。\n\n这个 skill 中有几处措辞模棱两可（如\"建议先做 X，但不是必须\"），容易导致校验时 subagent 返回 inconclusive。\n\n请完整执行评估流程。特别关注：\n- 当 subagent 校验返回 inconclusive 时，对应 finding 应降级（降低严重度或移入 gaps），并注明\"证据不足以确认\"\n- 不要把 inconclusive 的校验结果当作 confirmed 来支撑高严重度发现\n\n产物放在 .opencode/skills/skill-evaluator-tests/fixtures/ambiguous-skill-eval/ 下。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-055", "description": "inconclusive 校验结果在对应 finding 的 verification 中如实记录", "severity": "must" },
+        { "id": "EB-056", "description": "该校验 inconclusive 的 finding 没有被标记为高严重度（已降级），或已注明证据不足以确认", "severity": "should" },
+        { "id": "EB-057", "description": "不会将 inconclusive 校验结果写成 confirmed 来支撑结论", "severity": "must" }
+      ]
+    },
+    {
+      "id": "TC-013",
+      "name": "压力：自相矛盾被测 skill",
+      "description": "验证被测 skill 内部前后矛盾时（A 说先做 X，B 说先做 Y），skill-evaluator 能通过 consistency_completeness 维度检测并如实呈现矛盾",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "pressure",
+      "prompt": "请评估被测 skill .opencode/skills/skill-evaluator-tests/fixtures/contradictory-skill/SKILL.md。\n\n这个 skill 的正文和某个 reference 文件对同一步骤的要求互相矛盾——正文说\"必须先运行脚本\"，而 reference 里说\"不要运行脚本，手工操作\"。\n\n请完整执行评估流程，产物放在 .opencode/skills/skill-evaluator-tests/fixtures/contradictory-skill-eval/ 下。\n\n重点：consistency_completeness 维度应如实呈现内部矛盾，每条矛盾的双方均有证据引用，不偏袒任一方。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-058", "description": "evidence.json 中分别记录了矛盾的双方（正文的声称 + reference 的声称，各为独立 E 条目）", "severity": "must" },
+        { "id": "EB-059", "description": "consistency_completeness 维度有发现指出内部矛盾，同时引用矛盾的双方证据", "severity": "must" },
+        { "id": "EB-060", "description": "发现不偏袒任一方——如实呈现\"正文说 X，reference 说 Y\"，而非站队", "severity": "must" }
+      ]
+    },
+    {
+      "id": "TC-014",
+      "name": "压力：无证据断言被拒绝",
+      "description": "验证 skill-evaluator 的核心纪律：想写一条结论但找不到证据时不能直接断言，必须三选一（补证据/交 subagent 校验/降级为盲区假设）",
+      "target_skill": ".opencode/skills/skill-evaluator/SKILL.md",
+      "scenario_type": "pressure",
+      "prompt": "请评估被测 skill .opencode/skills/skill-digest/SKILL.md。我们仅提供被测 skill 文件本身，无 session，无 external。\n\n特别约束：你在写 findings.json 时，如果发现某一刻想写一条结论却说不出它是依据 evidence.json 里哪条 E——请停下来执行三选一：\n1. 去补一条新证据进 evidence.json\n2. 交给 subagent 做独立校验\n3. 将该结论降级移到 gaps 并标注为假设\n\n不要直接断言。最终产物放在 .opencode/skills/skill-digest-eval/ 下。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-061", "description": "findings.json 中每条 finding 的 evidence_ids 非空，且所有引用的 E 都真实存在于 evidence.json 中", "severity": "must" },
+        { "id": "EB-062", "description": "gaps 中若有条目，均为证据不足以支撑的未核验假设，标注了原因", "severity": "must" },
+        { "id": "EB-063", "description": "check_report.py 运行时不会因\"finding 无 evidence_ids\"报错", "severity": "must" }
+      ]
+    }
+  ]
+}
