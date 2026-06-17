@@ -16,7 +16,7 @@ commits: 2d42cd9..cc8e6b6
 
 ## Architecture
 
-单文件修改（`skill_digest/SKILL.md`），7 处改动分布在全文件的 5 个位置。
+单文件修改（`skill-digest/SKILL.md`），7 处改动分布在全文件的 5 个位置。
 
 ### Design Decisions
 
@@ -35,7 +35,7 @@ skill-digest 的使用方式不变。改进后：
 
 ## Verification
 
-- v2 评估：新建 `skill_digest-eval-v2/`，机检通过，verdict=pass
+- v2 评估：新建 `skill-digest-eval-v2/`，机检通过，verdict=pass
 - 全部 6 项原发现确认已解决（V1-V6）
 - 全文搜索确认 `present_files` 引用已完全移除
 
@@ -48,6 +48,6 @@ skill-digest 的使用方式不变。改进后：
 
 | File | Role | Notes |
 |------|------|-------|
-| `skill_digest-eval/report.md` | 修复前的评估报告 | verdict: pass_with_issues, 发现 F1-F8 |
-| `skill_digest-eval-v2/report.md` | 修复后的重新评估 | verdict: pass, 所有发现已解决 |
+| `skill-digest-eval/report.md` | 修复前的评估报告 | verdict: pass_with_issues, 发现 F1-F8 |
+| `skill-digest-eval-v2/report.md` | 修复后的重新评估 | verdict: pass, 所有发现已解决 |
 | `docs/compose/plans/2026-06-17-skill-digest-fixes.md` | 实现计划 | 6 tasks, 全部完成 |
