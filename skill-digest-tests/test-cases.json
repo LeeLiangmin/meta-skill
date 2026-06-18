@@ -1,0 +1,99 @@
+{
+  "skill_name": "skill-digest",
+  "skill_path": ".opencode/skills/skill-digest/SKILL.md",
+  "generated_at": "2026-06-18T00:49:00.000Z",
+  "test_cases": [
+    {
+      "id": "TC-001",
+      "name": "基线：完整五步流程",
+      "description": "验证 skill-digest 对简单 SOP 型 skill 按五步流程执行，产出含 TL;DR、类型、流程、缺口等核心节的 markdown 简报",
+      "target_skill": ".opencode/skills/skill-digest/SKILL.md",
+      "scenario_type": "normal",
+      "prompt": "请使用 skill-digest 为 .opencode/skills/skill-test-runner/SKILL.md 产出一份理解简报。\n\n在开始前，请先用 skill 工具加载被测 skill：.opencode/skills/skill-digest/SKILL.md\n\n执行完成后，确认产出的简报包含以下小节：TL;DR、类型、目标/完成定义、流程（阶段级）、关键观察点、缺口。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-001", "description": "subagent 先通过 skill 工具加载 skill-digest", "severity": "must" },
+        { "id": "EB-002", "description": "subagent 读取目标 skill（skill-test-runner）的 SKILL.md", "severity": "must" },
+        { "id": "EB-003", "description": "产出中包含 TL;DR 一节，一句话说明做什么、何时用、产出、最大风险", "severity": "must" },
+        { "id": "EB-004", "description": "产出中包含「类型」判定，含判断依据", "severity": "must" },
+        { "id": "EB-005", "description": "产出中包含「缺口」一节，只列观察不开处方", "severity": "must" },
+        { "id": "EB-006", "description": "产出中使用 [明说]/[推断]/[缺失] 三种来源标注", "severity": "must" },
+        { "id": "EB-007", "description": "产出中「流程」按阶段级组织为三元组（阶段/检查点/失败时）", "severity": "must" },
+        { "id": "EB-008", "description": "产出使用 Write 工具写入文件", "severity": "must" }
+      ]
+    },
+    {
+      "id": "TC-002",
+      "name": "来源标注准确性",
+      "description": "验证 skill-digest 在对规则密集的 skill 做消化时，正确区分 [明说]、[推断]、[缺失] 三种来源，不混同",
+      "target_skill": ".opencode/skills/skill-digest/SKILL.md",
+      "scenario_type": "normal",
+      "prompt": "请使用 skill-digest 为 .opencode/skills/skill-test-designer/SKILL.md 产出一份理解简报。\n\n在开始前，请先用 skill 工具加载被测 skill：.opencode/skills/skill-digest/SKILL.md\n\n重点关注三条边界规则（描述不评分、缺口不开处方、推断隔离标注）在源 skill 中是否有明写。产出中必须注明每条关键信息的来源标注。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-009", "description": "产出中以 [明说] 标注 skill-test-designer 中直接写明的规则（如 schema 定义、自检清单）", "severity": "must" },
+        { "id": "EB-010", "description": "产出中以 [推断] 标注从明说内容合理推出的判断", "severity": "must" },
+        { "id": "EB-011", "description": "产出中以 [缺失] 标注源 skill 未说明但本该有的信息", "severity": "must" },
+        { "id": "EB-012", "description": "[推断] 标注与 [明说] 标注不混同——不把推断伪装成 skill 原话", "severity": "must" },
+        { "id": "EB-013", "description": "缺口节只观察、不开处方——不出现「应该改成」类建议", "severity": "must" }
+      ]
+    },
+    {
+      "id": "TC-003",
+      "name": "不该触发的对照：评估任务",
+      "description": "验证 skill-digest 在收到评估/评判类请求时触发「何时不用本 skill」边界检查，拒绝或重定向到 skill-evaluator",
+      "target_skill": ".opencode/skills/skill-digest/SKILL.md",
+      "scenario_type": "control",
+      "prompt": "请使用 skill-digest 评估 .opencode/skills/skill-test-runner/SKILL.md 的质量，给出它写得好不好的结论。\n\n在开始前，请先用 skill 工具加载被测 skill：.opencode/skills/skill-digest/SKILL.md",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-014", "description": "subagent 识别请求为评估/评判类，触发「何时不用」边界", "severity": "must" },
+        { "id": "EB-015", "description": "subagent 拒绝做质量评判或重定向到 skill-evaluator", "severity": "must" },
+        { "id": "EB-016", "description": "subagent 未输出打分、好坏结论等评判性内容", "severity": "should" }
+      ]
+    },
+    {
+      "id": "TC-004",
+      "name": "压力：缺失引用文件的 skill",
+      "description": "验证 skill-digest 对无 references/scripts/assets 子目录的 skill 仍正常执行，在缺口中如实记录",
+      "target_skill": ".opencode/skills/skill-digest/SKILL.md",
+      "scenario_type": "pressure",
+      "prompt": "请使用 skill-digest 为 .opencode/skills/skill-digest/SKILL.md 产出一份理解简报（自消化）。\n\n在开始前，请先用 skill 工具加载被测 skill：.opencode/skills/skill-digest/SKILL.md\n\n注意：skill-digest 本身没有 references/ 子目录——验证在步骤 1「定位并清点」中如何处理这种无引用文件的情况。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-017", "description": "subagent 执行步骤 1「定位并清点」——读取 skill-digest 的 SKILL.md", "severity": "must" },
+        { "id": "EB-018", "description": "subagent 尝试遍历引用但未找到 references/ 等子目录时正常继续", "severity": "must" },
+        { "id": "EB-019", "description": "缺口中如实记录「未找到引用文件」或等效观察，不编造内容", "severity": "must" },
+        { "id": "EB-020", "description": "产出简报结构完整（含 TL;DR、类型、流程、缺口等核心节）", "severity": "must" }
+      ]
+    },
+    {
+      "id": "TC-005",
+      "name": "压力：模糊指令",
+      "description": "验证 skill-digest 在用户未明确指定目标 skill 名称时仍能处理或合理失败",
+      "target_skill": ".opencode/skills/skill-digest/SKILL.md",
+      "scenario_type": "pressure",
+      "prompt": "请使用 skill-digest 帮我搞清楚一个 skill 在干什么。\n\n在开始前，请先用 skill 工具加载被测 skill：.opencode/skills/skill-digest/SKILL.md\n\n（注意：我没有指定具体是哪个 skill——请按 skill-digest 的流程自行判断如何处理。）",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-021", "description": "subagent 识别输入中缺少目标 skill 路径，询问或报出缺失", "severity": "must" },
+        { "id": "EB-022", "description": "subagent 未在无目标的情况下编造输出", "severity": "must" },
+        { "id": "EB-023", "description": "subagent 的行为不违反三条边界（不评判、不开处方、不混同推断）", "severity": "should" }
+      ]
+    },
+    {
+      "id": "TC-006",
+      "name": "探索：混合类型 skill",
+      "description": "验证 skill-digest 对自称 SOP 型但编排顾问型引擎的混合 skill 能否正确分类并按类型裁剪",
+      "target_skill": ".opencode/skills/skill-digest/SKILL.md",
+      "scenario_type": "exploratory",
+      "prompt": "请使用 skill-digest 为 .opencode/skills/skill-test-judge/SKILL.md 产出一份理解简报。\n\n在开始前，请先用 skill 工具加载被测 skill：.opencode/skills/skill-digest/SKILL.md\n\n注意：skill-test-judge 在描述中自称 SOP 型，但编排的评估引擎 skill-evaluator 是顾问/启发式型。观察 skill-digest 如何处理这种混合类型——是判为单一类型还是混合，以及「按类型裁剪填表」的执行效果。",
+      "subagent_type": "general",
+      "expected_behaviors": [
+        { "id": "EB-024", "description": "subagent 正确识别 skill-test-judge 的类型（SOP 型或混合型）并给出判断依据", "severity": "may" },
+        { "id": "EB-025", "description": "产出按判定的类型裁剪，不适用的小节省略而非硬填", "severity": "may" },
+        { "id": "EB-026", "description": "混合类型的处理在缺口中有所体现", "severity": "may" }
+      ]
+    }
+  ]
+}

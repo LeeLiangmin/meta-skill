@@ -176,8 +176,26 @@ def main():
         return
 
     # 模式 1/2：渲染占位符模板（默认或自定义）
-    tpl_path = args.template or os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "report-template.md")
+    tpl_path = args.template
+    if not tpl_path:
+        # 默认模板路径：脚本所在目录的上一级下的 assets/
+        default_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
+        tpl_path = os.path.join(default_dir, "report-template.md")
+        
+        # 如果默认模板不存在，尝试从环境变量获取
+        if not os.path.exists(tpl_path):
+            env_assets = os.environ.get("SKILL_EVALUATOR_ASSETS")
+            if env_assets:
+                tpl_path = os.path.join(env_assets, "report-template.md")
+    
+    if not os.path.exists(tpl_path):
+        print(f"✗ 模板文件不存在: {tpl_path}", file=sys.stderr)
+        print("  请确认：", file=sys.stderr)
+        print("    1. 脚本位于 skill-evaluator/scripts/ 目录下（相对路径依赖此结构）", file=sys.stderr)
+        print("    2. 或设置环境变量 SKILL_EVALUATOR_ASSETS 指向 assets/ 目录", file=sys.stderr)
+        print("    3. 或使用 --template 指定自定义模板路径", file=sys.stderr)
+        sys.exit(1)
+    
     with open(tpl_path, encoding="utf-8") as f:
         template = f.read()
 

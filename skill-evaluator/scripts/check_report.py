@@ -127,8 +127,8 @@ def validate(evidence_doc, findings_doc):
     for fid in verdict.get("summary_finding_ids") or []:
         if fid not in finding_ids:
             errors.append(f"verdict: summary_finding_ids 引用了不存在的发现 {fid!r}")
-    if rating in {"pass_with_issues", "fail"} and not (verdict.get("summary_finding_ids")):
-        warnings.append("verdict: 评级为有问题/不通过，但没有点名支撑它的发现")
+    if rating in {"pass_with_issues", "fail", "inconclusive"} and not (verdict.get("summary_finding_ids")):
+        warnings.append("verdict: 评级为有问题/不通过/证据不足，但没有点名支撑它的发现")
 
     # --- gaps ---
     for i, g in enumerate(findings_doc.get("gaps", [])):
