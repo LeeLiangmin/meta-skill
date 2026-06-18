@@ -22,32 +22,39 @@
 ## 自动化测试流水线
 
 ```
-skill-test-designer          skill-test-runner              skill-test-judge
-┌─────────────────┐         ┌─────────────────┐          ┌─────────────────┐
-│ 读取被测 skill   │────────>│ 读取 test-cases │─────────>│ 读取 test-cases │
-│ 分析可测行为     │         │ 每个场景 spawn   │          │ 读取 run-results│
-│ 设计场景+期望    │         │   一个 subagent  │          │ 编排 evaluator  │
-│                 │         │ 收集所有输出     │          │ 逐条比对检查点   │
-└────────┬────────┘         └────────┬────────┘          └────────┬────────┘
-         │                           │                            │
-         v                           v                            v
-  test-cases.json              run-results/                   report.md
+skill-test-designer          👤 人工审核              skill-test-runner              skill-test-judge
+┌─────────────────┐         ┌──────────┐         ┌─────────────────┐          ┌─────────────────┐
+│ 读取被测 skill   │────────>│ 审核用例  │────────>│ 读取 test-cases │─────────>│ 读取 test-cases │
+│ 分析可测行为     │         │ 增/删/改  │         │ 每个场景 spawn   │          │ 读取 run-results│
+│ 设计场景+期望    │         │ 批准/驳回  │         │   一个 subagent  │          │ 编排 evaluator  │
+│                 │         │          │         │ 收集所有输出     │          │ 逐条比对检查点   │
+└────────┬────────┘         └──────────┘         └────────┬────────┘          └────────┬────────┘
+         │                                                │                            │
+         v                                                v                            v
+  test-cases.json                                    run-results/                report.md
+```
+
+**designer 产出 test-cases.json 后，必须经过人工审核（可增删改用例），批准后才能进入 runner 执行。** runner 会检查 `reviewed_at` 字段，未审核的 test-cases.json 默认拒绝执行。
 ```
 
 所有产物放在被测 skill 同级的 `<skill-name>-tests/` 目录下。
 
 ### 使用示例
 
-```bash
+```
 # 以 skill-digest 为被测 skill，跑完整流水线：
 
 1. 加载 skill-test-designer，为 skill-digest 设计测试用例
-   → 产出 .opencode/skills/skill-digest-tests/test-cases.json
+   → 产出 skill-digest-tests/test-cases.json
+   → designer 提请人工审核
 
-2. 加载 skill-test-runner，执行测试用例
+2. 👤 人工审核 test-cases.json（增删改用例），批准后继续
+
+3. 加载 skill-test-runner，执行测试用例
+   → runner 检查 reviewed_at 字段确认已审核
    → 产出 skill-digest-tests/run-results/<timestamp>/
 
-3. 加载 skill-test-judge，评判执行结果
+4. 加载 skill-test-judge，评判执行结果
    → 产出 skill-digest-tests/report.md
 ```
 
