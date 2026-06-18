@@ -55,9 +55,18 @@ actor({ operation: { action: "spawn", subagent_type: "<用例指定的类型>",
 
 对每个 spawn 出的 actor_id 使用 `actor({ operation: { action: "wait", actor_id: "<id>", timeout_ms: 600000 } })` 阻塞等待完成（默认超时 10 分钟）。
 
-**收集完整对话**：subagent 的 `actor_result` 字段即为完整输出（含所有 tool_call 和文本）。直接用于写输出文件，不做截断或摘要。
+**捕获完整执行 session**：subagent 的 `actor_result` 包含完整对话（所有 turn 的文本和 tool_call）。直接用于写输出文件，不做截断、摘要或改写。
 
-### 5. 写入输出文件
+**session 完整性要求**（缺一不可）：
+- 必须包含 subagent 从 spawn 到完成的**全部 turn**，不得省略中间任何一步
+- 每个 tool_call 的**名称和输入参数**必须可见
+- 每个 tool 调用的**返回结果**必须可见（即使失败/超时）
+- subagent 的**思考过程**（如有 reasoning/thinking）必须保留
+- **时间顺序**保持原样，不重排、不分组
+
+judge 依赖完整体面的 session 才能用 skill-evaluator 做证据型评估——截断或摘要会直接导致评估维度不可评。
+
+### 5. 写入 session 文件
 
 创建输出目录：
 
@@ -65,26 +74,46 @@ actor({ operation: { action: "spawn", subagent_type: "<用例指定的类型>",
 run-results/<YYYYMMDD-HHMMSS>/
 ```
 
-对每个用例写入：
+对每个用例写入 **session 文件**（供 judge 和 skill-evaluator 使用）：
 
 ```
-TC-<id>-output.md
+TC-<id>-session.md
 ```
 
-内容格式：
+Session 文件必须以 **JSONL 格式**（首选）或结构化 markdown（备选）记录完整执行过程。优先产出 `.jsonl`；若 actor 工具只提供纯文本输出，降级为 `.md` 但在 summary.json 的 `session_format` 中如实标注。
+
+**JSONL 格式**（首选，每行一条事件）：
+
+```jsonl
+{"turn":1,"timestamp":"2026-06-17T08:50:41Z","type":"user_prompt","content":"<发给 subagent 的 prompt 原文>"}
+{"turn":2,"timestamp":"2026-06-17T08:50:45Z","type":"tool_call","tool":"read","input":{"filePath":"..."}}
+{"turn":2,"timestamp":"2026-06-17T08:50:46Z","type":"tool_result","tool":"read","output":"<读取结果>"}
+{"turn":3,"timestamp":"2026-06-17T08:50:50Z","type":"assistant_text","content":"<文本回复>"}
+{"turn":3,"timestamp":"2026-06-17T08:50:52Z","type":"tool_call","tool":"write","input":{"filePath":"...","content":"..."}}
+{"turn":3,"timestamp":"2026-06-17T08:50:54Z","type":"tool_result","tool":"write","output":"Wrote file successfully."}
+{"turn":4,"timestamp":"2026-06-17T08:51:00Z","type":"assistant_text","content":"<最终回复>"}
+{"turn":4,"timestamp":"2026-06-17T08:51:00Z","type":"session_end","status":"success"}
+```
+
+`type` 取值：`user_prompt` / `assistant_text` / `tool_call` / `tool_result` / `session_end`
+
+**Markdown 备选格式**（当 actor 工具仅输出纯文本时）：
 
 ```markdown
 # <用例 ID>: <用例名称>
-
-**Status**: <subagent 返回的 status>
 **Target Skill**: <target_skill>
 **Subagent Type**: <subagent_type>
 **Scenario Type**: <scenario_type>
+**Spawned At**: <ISO 8601>
+**Completed At**: <ISO 8601>
+**Status**: <subagent 返回的 status>
 
-## 完整 Subagent 输出
+## 完整执行 Session
 
-<subagent 的 actor_result 原文，不做任何修改>
+<subagent actor_result 原文，不做任何修改、截断或摘要>
 ```
+
+无论哪种格式，**必须保留 subagent 的全部 tool_call 及其输入输出**。judge 通过 skill-evaluator 评估时需要从 session 中提取每条 tool_call 作为原子证据。
 
 ### 6. 写入 summary.json
 
@@ -106,7 +135,7 @@ TC-<id>-output.md
       "scenario_type": "normal",
       "target_skill": "<target_skill 路径>",
       "actor_id": "<subagent 的 actor_id>",
-      "output_file": "TC-001-output.md",
+      "output_file": "TC-001-session.jsonl",
       "started_at": "<ISO 8601>",
       "completed_at": "<ISO 8601>"
     }
@@ -127,8 +156,8 @@ TC-<id>-output.md
 run-results/
 └── <YYYYMMDD-HHMMSS>/
     ├── summary.json
-    ├── TC-001-output.md
-    ├── TC-002-output.md
+    ├── TC-001-session.jsonl
+    ├── TC-002-session.md       ← 备选格式（当无法产出 JSONL 时）
     └── ...
 ```
 
@@ -138,15 +167,15 @@ run-results/
 
 - **每个场景独立 subagent。** 永远不要在一个 subagent 里顺序执行多个测试用例。一个 subagent = 一个测试用例。
 - **prompt 原样传递。** 用例中的 prompt 字段原封不动发给 subagent，不增不减不改写。
-- **完整对话保留。** 输出文件记录 subagent 的完整原始输出（含 tool_call ），不做摘要、不截断。judge 需要完整上下文才能判断。
+- **完整 session 导出。** session 文件必须包含 subagent 的完整执行过程——所有 turn、所有 tool_call 及其输入输出。不做摘要、不截断、不省略中间步骤。judge 通过 skill-evaluator 评估时，每个 tool_call 都是一条潜在证据。
 - **并行独立场景。** 无依赖的用例必须并行 spawn（同一轮次内同时发出多个 spawn），不得串行执行。
 - **有依赖则串行。** 标记了 `depends_on` 的用例在依赖完成后才 spawn。
 - **不评判结果。** runner 只执行和收集，不判断通过/失败。评判是 skill-test-judge 的职责。
 
 ## 错误处理
 
-- **spawn 失败**：该用例 status 记为 `error`，写入 `TC-<id>-output.md` 中说明 spawn 失败原因。不阻塞其他用例。
-- **wait 超时**：该用例 status 记为 `timeout`，写入输出文件中说明超时。不阻塞其他用例。
+- **spawn 失败**：该用例 status 记为 `error`，写入 `TC-<id>-session.md` 中说明 spawn 失败原因。不阻塞其他用例。
+- **wait 超时**：该用例 status 记为 `timeout`，写入 session 文件中说明超时，保留已收到的部分输出。不阻塞其他用例。
 - **test-cases.json 不存在**：报告文件不存在，终止执行。
 - **test-cases.json 格式不合法**：报告具体格式错误（缺失字段、类型错误），终止执行。
 

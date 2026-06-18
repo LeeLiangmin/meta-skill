@@ -16,7 +16,7 @@
 | Skill | 职责 | 输入 | 输出 |
 |-------|------|------|------|
 | **skill-test-designer** | 从 skill 中提取可测试行为，设计结构化测试用例（场景 prompt + 预期行为清单） | 被测 skill | `test-cases.json` |
-| **skill-test-runner** | 将测试用例并行派发给独立 subagent 执行，收集所有输出 | `test-cases.json` | `run-results/<timestamp>/` |
+| **skill-test-runner** | 将测试用例并行派发给独立 subagent 执行，导出每个场景的完整执行 session（JSONL，含全部 turn/tool_call/时间戳） | `test-cases.json` | `run-results/<timestamp>/`（含 session 文件和 summary.json） |
 | **skill-test-judge** | 编排 skill-evaluator 评估每个场景的执行效果，逐条核对预期行为，产出判决报告 | `test-cases.json` + `run-results/` | `report.md` |
 
 ## 自动化测试流水线
