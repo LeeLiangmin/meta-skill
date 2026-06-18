@@ -16,22 +16,24 @@
 | Skill | 职责 | 输入 | 输出 |
 |-------|------|------|------|
 | **skill-test-designer** | 从 skill 中提取可测试行为，设计结构化测试用例（场景 prompt + 预期行为清单） | 被测 skill | `test-cases.json` |
-| **skill-test-runner** | 将测试用例并行派发给独立 subagent 执行，导出每个场景的完整执行 session（JSONL，含全部 turn/tool_call/时间戳） | `test-cases.json` | `run-results/<timestamp>/`（含 session 文件和 summary.json） |
-| **skill-test-judge** | 编排 skill-evaluator 评估每个场景的执行效果，逐条核对预期行为，产出判决报告 | `test-cases.json` + `run-results/` | `report.md` |
+| **skill-test-runner** | 将测试用例并行派发给独立 subagent 执行，subagent 完成测试后内嵌 skill-evaluator 做自评（产出 evidence.json + findings.json） | `test-cases.json` | `run-results/<timestamp>/`（含 session 文件、自评产物、summary.json） |
+| **skill-test-judge** | 读取 subagent 自评产物，交叉验证抽查，逐条核对 expected_behaviors，汇总判决报告 | `test-cases.json` + `run-results/` | `report.md` |
 
 ## 自动化测试流水线
 
 ```
-skill-test-designer          👤 人工审核              skill-test-runner              skill-test-judge
-┌─────────────────┐         ┌──────────┐         ┌─────────────────┐          ┌─────────────────┐
-│ 读取被测 skill   │────────>│ 审核用例  │────────>│ 读取 test-cases │─────────>│ 读取 test-cases │
-│ 分析可测行为     │         │ 增/删/改  │         │ 每个场景 spawn   │          │ 读取 run-results│
-│ 设计场景+期望    │         │ 批准/驳回  │         │   一个 subagent  │          │ 编排 evaluator  │
-│                 │         │          │         │ 收集所有输出     │          │ 逐条比对检查点   │
-└────────┬────────┘         └──────────┘         └────────┬────────┘          └────────┬────────┘
-         │                                                │                            │
-         v                                                v                            v
-  test-cases.json                                    run-results/                report.md
+skill-test-designer          👤 人工审核              skill-test-runner                skill-test-judge
+┌─────────────────┐         ┌──────────┐         ┌───────────────────┐          ┌─────────────────┐
+│ 读取被测 skill   │────────>│ 审核用例  │────────>│ 每个场景 spawn      │─────────>│ 读取 test-cases │
+│ 分析可测行为     │         │ 增/删/改  │         │   一个 subagent     │          │ 读自评产物       │
+│ 设计场景+期望    │         │ 批准/驳回  │         │ subagent 内嵌       │          │ 交叉验证抽查     │
+│                 │         │          │         │   evaluator 自评   │          │ 逐条比对检查点   │
+│                 │         │          │         │ 收集全部输出       │          │ 汇总报告         │
+└────────┬────────┘         └──────────┘         └────────┬──────────┘          └────────┬────────┘
+         │                                                │                              │
+         v                                                v                              v
+  test-cases.json                                    run-results/                  report.md
+                                                (含 session + 自评产物)
 ```
 
 **designer 产出 test-cases.json 后，必须经过人工审核（可增删改用例），批准后才能进入 runner 执行。** runner 会检查 `reviewed_at` 字段，未审核的 test-cases.json 默认拒绝执行。
@@ -66,14 +68,17 @@ skill-test-designer          👤 人工审核              skill-test-runner   
 
 ```
 skill-digest ──→ 理解 skill（静态、不做评判）
+
 skill-evaluator ──→ 评估 skill 执行效果（证据驱动）
-                  ↑
-                  │ 作为评估引擎
-                  │
+       ↑                    ↑
+       │ 内嵌于 subagent     │ 内嵌于 subagent
+       │ 做自评              │ 做自评
+       │                    │
 skill-test-designer → skill-test-runner → skill-test-judge
-     设计测试              执行测试            评判结果
+     设计测试              执行+自评          交叉验证+比对+汇总
 ```
 
-- `skill-test-judge` 的核心评估引擎是 `skill-evaluator`，不做替代，做编排
+- skill-evaluator 在 **subagent 内部** 运行自评（拥有完整 tool_call 上下文），而非由 judge 事后加载
+- `skill-test-judge` 消费自评产物，做交叉验证和 checklist 比对
 - `skill-test-designer` 可选调用 `skill-digest` 快速理解被测 skill
 - 创建/修改 skill 本身使用 `skill-creator`

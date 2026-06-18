@@ -1,23 +1,25 @@
 ---
 name: skill-test-judge
-description: 编排 skill-evaluator 对 skill-test-runner 的执行结果进行评判——逐条核对 test-cases.json 中的 expected_behaviors，按 must/should/may 分级判定，产出测试报告。当用户需要评判测试执行结果、判定一个 skill 的测试用例通过/失败、或需要一份可追溯的测试判定报告时使用本 skill。触发语包括"评判测试结果""判定测试用例""给出测试报告""这个测试跑得怎么样"。
+description: 读取 subagent 自评产物（evidence.json + findings.json），逐条核对 test-cases.json 中的 expected_behaviors，按 must/should/may 分级判定，产出测试报告。当用户需要评判测试执行结果、判定一个 skill 的测试用例通过/失败、或需要一份可追溯的测试判定报告时使用本 skill。触发语包括"评判测试结果""判定测试用例""给出测试报告""这个测试跑得怎么样"。
 ---
 
 # Skill Test Judge
 
-本 skill 的唯一目标：读入 `test-cases.json` 和 `run-results/<timestamp>/`，对每个测试用例编排 skill-evaluator 做证据型评估，逐条核对 expected_behaviors，按 must/should/may 分级判定，产出一份可追溯的 `report.md`。
+本 skill 的唯一目标：读入 `test-cases.json` 和 `run-results/<timestamp>/`，读取每个 subagent 的**自评产物**（evidence.json + findings.json），逐条核对 expected_behaviors，按 must/should/may 分级判定，产出一份可追溯的 `report.md`。
 
-核心原则：**评估引擎是 skill-evaluator，本 skill 只做编排和 checklist 比对。** 不自编评估逻辑、不做无证据的断言、不偏离分级判定规则。
+核心原则：**subagent 已完成自评（内嵌 skill-evaluator 运行），本 skill 做交叉验证 + checklist 比对 + 汇总。** 不再重复加载 skill-evaluator 做评估——subagent 在自己的上下文里跑 evaluator 远比 judge 事后读文本精确。
 
 ## 整体架构
 
 ```
 test-cases.json ─────────┐
-                         ├──→ 逐用例 → 读 subagent 输出 → skill-evaluator 评估 → checklist 比对 → report.md
-run-results/<ts>/ ───────┘
+                         ├──→ 逐用例 → 读 subagent 自评 evidence.json + findings.json
+run-results/<ts>/ ───────┘            → 交叉验证（比对 session 原文）
+                                      → checklist 比对（expected_behaviors）
+                                      → report.md
 ```
 
-本 skill 本身是 SOP 型（流程明确、有验收门控），但它编排的评估引擎（skill-evaluator）是顾问/启发式型。
+**为什么不再由 judge 加载 skill-evaluator**：runner 无法获取 subagent 内部的 tool_call 明细（actor_result 只含最终文本）。但 subagent 在执行时当场加载 skill-evaluator 对自己做自评，evaluator 在 subagent 上下文中有权限看到全部 tool_call、输入输出和 reasoning。judge 直接消费这份自评产物，做交叉验证和汇总。
 
 ## 流程
 
@@ -25,65 +27,56 @@ run-results/<ts>/ ───────┘
 
 用 `Read` 工具读取：
 - `test-cases.json` —— 获取每个用例的 `id`、`name`、`target_skill`、`expected_behaviors`
-- `run-results/<timestamp>/summary.json` —— 获取 `results` 数组，含每个用例的 `output_file`（即 session 文件路径，如 `TC-001-session.jsonl` 或 `TC-001-session.md`）和 `status`
+- `run-results/<timestamp>/summary.json` —— 获取 `results` 数组，含每个用例的 `output_file`、`eval_dir` 和 `status`
 
-若 `summary.json` 中某用例 `status` 为 `error` 或 `timeout`，该用例无法评估执行行为——在报告中记为 `SKIP`，只记录原因，不加载 skill-evaluator。
+若 `summary.json` 中某用例 `status` 为 `error` 或 `timeout`，subagent 未正常完成，无法评估——在报告中记为 `SKIP`，只记录原因。
 
-### 2. 逐用例评估
+### 2. 逐用例交叉验证 + 比对
 
 对每个 `status` 为 `success` 的用例，按以下子流程执行：
 
-#### 2.1 读取执行 session
+#### 2.1 读取 subagent 自评产物
 
-读取 `run-results/<timestamp>/<output_file>` 获取 subagent 的完整执行 session。这将成为 skill-evaluator 的 session 来源。
+从 `run-results/<timestamp>/<eval_dir>/` 读取：
+- `evidence.json` —— subagent 自评产出的证据账本
+- `findings.json` —— subagent 自评产出的发现
 
-**Session 格式识别**：
-- `.jsonl` 结尾 → JSONL 格式（每行一个事件，含 turn / timestamp / type / tool / input / output）
-- `.md` 结尾 → 结构化 markdown 备选格式
+同时读取 `run-results/<timestamp>/<output_file>`（session 原文）用于交叉验证。
 
-无论哪种格式，skill-evaluator 都能从中抽取原子证据——但 JSONL 格式可按 turn 和 tool_call 精确引用，优先使用 JSONL。
+#### 2.2 交叉验证
 
-#### 2.2 加载 skill-evaluator 做评估
+subagent 的自评可能遗漏或粉饰自己的错误。因此 judge 做轻量交叉验证：
 
-使用 `skill` 工具加载 skill-evaluator，然后给出如下指令：
+1. **抽查 evidence.json 中的关键 E 条目**：在 session 原文中找对应内容，确认 subagent 的自我引用真实存在（文件路径、行号对得上）
+2. **核对 findings.json 的全面性**：有没有明显该发现但没发现的问题？检查 session 原文中是否有违反被测 skill 硬规矩的行为而未被 findings 收录
+3. **自评偏差标记**：若发现 self-eval 遗漏或弱化自身错误，在报告中标记为 `self-eval bias detected`，并将 judge 的观察作为补充发现
 
-> 请评估被测 skill `<target_skill>`。
->
-> 我们提供一份执行 session：`run-results/<timestamp>/<output_file>`（JSONL 或 markdown 格式，已在上文读取）。
-> session 中包含 subagent 的完整执行过程——所有 turn、所有 tool_call 及其输入输出。
-> 额外约束：你仅评估该次执行的保真度和产出质量，不进行完整的多维度评估。
-> 重点关注：subagent 实际执行了哪些步骤、跳过了哪些、产出是否符合 skill 要求。
->
-> 请产出 evidence.json 和 findings.json，放入 `<output_dir>`。
->
-> 不需要渲染 report.md——那是后续步骤的事。
-
-**为什么用 skill-evaluator 而非自编逻辑**：skill-evaluator 自带证据账本机制、observed/inferred/unverified 三状态分类、独立校验协议。自编的判断没有这些，不可信。
+只做抽查（每用例 2-3 条），不做逐条全量复核——那等于重跑一次 evaluator。
 
 #### 2.3 Checklist 比对
 
-拿到 skill-evaluator 产出的 `evidence.json` 和 `findings.json` 后，逐条遍历该用例的 `expected_behaviors`：
+逐条遍历该用例的 `expected_behaviors`，在自评产物中寻找证据：
 
 对每条 expected_behavior：
 
-1. **在 evaluator 产出中寻找证据**：在 `evidence.json` 中搜索相关 E 条目，在 `findings.json` 中搜索相关 F 条目
-2. **也在原始 subagent 输出中寻找证据**：evaluator 可能遗漏某些原始行为（如 tool_call 序列），需要交叉验证
+1. **在 evidence.json 中搜索相关 E 条目**，在 findings.json 中搜索相关 F 条目
+2. **也在 session 原文中搜索**：evaluator 可能遗漏某些明显行为，需要直接从原文中找
 3. **按 severity 做判定**：
 
 | severity | 判定逻辑 |
 |----------|----------|
-| `must` | 在 evidence + findings + 原始输出中找到**明确证据** → **PASS**；找不到 → **FAIL** |
-| `should` | 找到证据 → **PASS**；找不到证据 → **WARN**（注：WARN 不同于 FAIL，表示"应做但没做，不致命"） |
-| `may` | 不判定通过/失败，仅记录**观察**（在证据中是否看到相关行为） |
+| `must` | 在 evidence + findings + session 原文中找到**明确证据** → **PASS**；找不到 → **FAIL** |
+| `should` | 找到证据 → **PASS**；找不到证据 → **WARN**（"应做但没做，不致命"） |
+| `may` | 不判定通过/失败，仅记录**观察** |
 
 **PASS/FAIL/WARN 判定示例**：
-- EB-009 是 must 级"渲染前运行 check_report.py"——若 evaluator evidence 中未发现 `check_report.py` 的执行记录，且原始输出中也未出现，则 → FAIL
-- EB-017 是 should 级"方法学说明评估范围"——若 evaluator evidence 中未发现相关描述，则 → WARN
-- EB-037 是 may 级"主动提出补充运行"——仅记录"observed：subagent 未主动提出"即可
+- EB-009 是 must 级"渲染前运行 check_report.py"——若 evidence 中无相关条目、session 原文中也未出现，则 → FAIL
+- EB-017 是 should 级"方法学说明评估范围"——若 evidence 中未发现相关描述，则 → WARN
+- EB-037 是 may 级——仅记录"observed：未主动提出"即可
 
-**证据引用格式**：每条判定必须附证据引用，格式为 `源:定位`，例如：
-- `E1:SKILL.md:L40-45` — 来自 evidence.json 的 E1 条目
-- `output:L10-11` — 来自 subagent 原始输出的第 10-11 行
+**证据引用格式**：每条判定必须附证据引用，格式为 `源:定位`：
+- `E5:output:L10-11` — 来自 evidence.json 的 E5 条目
+- `session:L120-125` — 来自 session 原文第 120-125 行
 - `F3:verification` — 来自 findings.json 的 F3 条目的 verification 字段
 
 不允许出现"看起来合理""整体上符合"等无定位词。
@@ -100,7 +93,7 @@ run-results/<ts>/ ───────┘
 **测试用例文件**: <test-cases.json 路径>
 **执行结果目录**: run-results/<timestamp>/
 **判定时间**: <ISO 8601>
-**判定引擎**: skill-evaluator (编排: skill-test-judge)
+**评估方式**: subagent 内嵌 skill-evaluator 自评 + judge 交叉验证与 checklist 比对
 
 ---
 
@@ -112,19 +105,20 @@ run-results/<ts>/ ───────┘
 | PASS | <N> |
 | FAIL | <N> |
 | WARN | <N>（should 级未满足的累计数） |
-| SKIP | <N>（因执行失败/超时/输出缺失/评估失败无法评判） |
+| SKIP | <N>（因执行失败/超时/输出缺失无法评判） |
+| self-eval bias | <N>（自评偏差标记数） |
 | 通过率 | <PASS / (总数 - SKIP) × 100%> |
 
-| 用例 | 名称 | 场景 | 判定 | must PASS/FAIL | should PASS/WARN | may 观察 |
-|------|------|------|------|----------------|-------------------|----------|
-| TC-001 | <名称> | <场景类型> | PASS / FAIL / SKIP / EVAL_ERROR | 8/10 | 1/2 | 注记 |
+| 用例 | 名称 | 场景 | 判定 | must PASS/FAIL | should PASS/WARN | bias |
+|------|------|------|------|----------------|-------------------|------|
+| TC-001 | <名称> | normal | PASS / FAIL / SKIP | 8/10 | 1/2 | — |
 | ... | | | | | | |
 
 ---
 
 ## 逐用例详情
 
-### TC-XXX: <名称> — <PASS|FAIL|WARN|SKIP>
+### TC-XXX: <名称> — <PASS|FAIL|SKIP>
 
 **场景**: <description>
 **场景类型**: <scenario_type>
@@ -134,13 +128,17 @@ run-results/<ts>/ ───────┘
 
 | EB-ID | 描述 | 严重度 | 判定 | 证据 |
 |-------|------|--------|------|------|
-| EB-001 | <描述> | must | PASS | E5:output:L10-11 |
-| EB-002 | <描述> | should | WARN | —（evaluator evidence 中无相关记录，原始输出中也未发现） |
+| EB-001 | <描述> | must | PASS | E5:session:L10-11 |
+| EB-002 | <描述> | should | WARN | —（evidence 无相关记录，session 原文也未发现） |
 | ... | | | | |
 
-#### Skill-Evaluator 评估摘要
+#### 自评摘要
 
-> 引用 skill-evaluator 对这一用例产出的 findings.json 中的关键发现（1-3 条）。
+> 引用 findings.json 中的关键发现（1-3 条）。
+
+#### 交叉验证
+
+> 抽查结果：E12 条目已确认（session:L45 确实有对应内容）；未发现明显遗漏（或：发现 N 处自评偏差）
 
 ---
 
@@ -154,7 +152,7 @@ run-results/<ts>/ ───────┘
 
 | 用例 | EB-ID | 描述 | 失败原因 |
 |------|-------|------|----------|
-| TC-001 | EB-009 | 渲染前运行 check_report.py | evaluator evidence 无 check_report.py 执行记录 |
+| TC-001 | EB-009 | 渲染前运行 check_report.py | evidence 无相关条目，session 原文也未出现 |
 
 ### SHOULD 级警告项
 
@@ -176,33 +174,28 @@ run-results/<ts>/ ───────┘
 - 无 must 级 FAIL 但有 should 级 WARN → 总判定 **PASS（附警告）**
 - 全部 SKIP → 总判定 **INCONCLUSIVE**
 
-### 4. 清理临时产物
-
-skill-evaluator 产出的 `evidence.json` 和 `findings.json` 默认保留——它们是判定证据链的一部分。
-
 ## 关键约束
 
-- **评估引擎必须是 skill-evaluator**，不自编评估逻辑
+- **评估数据来自 subagent 自评**，不自编评估逻辑
 - **逐条核对 expected_behaviors**，不跳过不合并
 - **按 severity 分级判定**：must→PASS/FAIL，should→PASS/WARN，may→仅观察
 - **每条判定必须有证据引用**（`源:定位`），无引用不出现在报告里
-- **SKIP 的用例不加载 skill-evaluator**
+- **交叉验证抽查**每用例 2-3 条证据，检测自评偏差
+- **SKIP 的用例不做评估**
 
 ## 参考文件
 
-本 skill 依赖以下上游文件（由 skill-test-designer 和 skill-test-runner 产出）：
-- `test-cases.json` — 测试用例定义
-- `run-results/<timestamp>/summary.json` — 运行清单
-- `run-results/<timestamp>/TC-xxx-output.md` — 各用例 subagent 输出
-
-评估引擎：
-- `.opencode/skills/skill-evaluator/` — 通过 `skill` 工具加载
+本 skill 依赖以下上游文件：
+- `test-cases.json` — 测试用例定义（来自 skill-test-designer）
+- `run-results/<timestamp>/summary.json` — 运行清单（来自 skill-test-runner）
+- `run-results/<timestamp>/TC-xxx-session.md` — subagent 执行 session（来自 skill-test-runner）
+- `run-results/<timestamp>/TC-xxx-eval/evidence.json` — subagent 自评证据（subagent 内部 skill-evaluator 产出）
+- `run-results/<timestamp>/TC-xxx-eval/findings.json` — subagent 自评发现（subagent 内部 skill-evaluator 产出）
 
 ## 错误处理
 
 - **summary.json 不存在**：报告"运行清单缺失"，终止。
-- **某用例 output_file 不存在**：该用例标记为 `MISSING_OUTPUT`，跳过评估，记录在报告中。
-- **skill-evaluator 评估失败**：重试一次；再次失败则该用例标记为 `EVAL_ERROR`，记录原因。
+- **某用例 eval_dir 下无 evidence.json**：该用例标记为 `MISSING_EVAL`，跳过评估，记录在报告中。
 - **expected_behaviors 格式异常**（如缺少 severity 字段）：缺 severity 的默认按 `must` 处理，并在报告中注明。
 
 ## 何时不用本 skill
