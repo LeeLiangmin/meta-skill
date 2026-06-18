@@ -1,0 +1,24 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "skill": {
+      "skill-evaluator": "allow",
+      "skill-test-designer": "allow",
+      "skill-test-runner": "allow",
+      "skill-test-judge": "allow",
+      "skill-digest": "allow"
+    }
+  },
+  "agent": {
+    "build": {
+      "permission": {
+        "task": {
+          "*": "allow"
+        },
+        "bash": {
+          "python*": "allow"
+        }
+      }
+    }
+  }
+}

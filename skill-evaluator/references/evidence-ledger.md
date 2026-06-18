@@ -6,6 +6,7 @@
 
 ```json
 {
+  "schema_version": "1.0",
   "target_skill": "被测 skill 的名字或路径",
   "evaluated_at": "2026-06-17",
   "sources": [
@@ -28,6 +29,7 @@
 
 字段说明：
 
+- `schema_version`：证据账本的格式版本号（当前 `"1.0"`）。未来若 schema 变更，此字段用于向前兼容，消费方可根据版本号选择解析策略。
 - `sources[].type` 只能是 `skill` / `session` / `external` 三者之一，对应 SKILL.md 里讲的三种来源。
 - `sources[].locator` 是这个来源整体的定位（文件名、运行记录名、URL+抓取日期）。
 - `evidence[].source_id` 必须指向某个已声明的 source。

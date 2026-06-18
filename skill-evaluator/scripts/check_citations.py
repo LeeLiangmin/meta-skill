@@ -28,15 +28,25 @@ def main():
 
     valid = {e.get("id") for e in evidence_doc.get("evidence", [])}
 
-    # 约定证据 ID 形如 E1、E12。扫描成品中所有这种 token，无论有效与否。
-    pat = re.compile(r"\bE\d+\b")
+    # 证据引用格式为 [E1]、[E1, E2] 等。只匹配方括号内的 E 引用。
+    pat = re.compile(r"\[(E\d+(?:,\s*E\d+)*)\]")
+    seen = set()
     cited, dangling = set(), []
     for ln, line in enumerate(lines, 1):
-        # 跳过附录证据账本表格行本身（它列的是定义，不是引用）
-        for tok in pat.findall(line):
-            cited.add(tok)
-            if tok not in valid:
-                dangling.append((ln, tok, line.strip()[:80]))
+        for m in pat.finditer(line):
+            toks = re.findall(r"E\d+", m.group(1))
+            for tok in toks:
+                seen.add((ln, tok))
+                cited.add(tok)
+                if tok not in valid:
+                    dangling.append((ln, tok, line.strip()[:80]))
+    # 同时检查裸 E\d+ 引用（可能出现在非 bracket 上下文中，给 warning）
+    bare_pat = re.compile(r"\bE\d+\b")
+    for ln, line in enumerate(lines, 1):
+        for tok in bare_pat.findall(line):
+            if (ln, tok) not in seen:
+                dangling.append((ln, tok, f"(裸引用，建议改用 [E] 格式) {line.strip()[:80]}"))
+                cited.add(tok)
 
     print(f"成品引用统计：出现 {len(cited)} 个不同的 Ex，证据账本中有 {len(valid)} 条证据。")
 

@@ -1,6 +1,11 @@
 ---
 name: skill-test-designer
-description: 为一个已有的 skill 自动设计测试用例——提取可测试行为、构造场景 prompt、定义结构化预期结果。当你需要系统化地验证一个 skill 是否按预期工作时使用本 skill。触发场景：(1) 为新 skill 设计测试用例，(2) 为已有 skill 补充测试覆盖，(3) 构建 skill 测试管道中的第一步。
+description: 为已有 skill 自动设计测试用例——提取可测试行为、构造场景 prompt、定义结构化预期结果。触发词：设计测试用例、为 skill 补充测试覆盖、构建 skill 测试管道。
+license: MIT
+compatibility: opencode
+metadata:
+  version: "1.3"
+  author: LeeLiangmin
 ---
 
 # Skill Test Designer
@@ -119,16 +124,51 @@ description: 为一个已有的 skill 自动设计测试用例——提取可测
 - [ ] 每条 expected_behavior 可客观验证，不含含混词
 - [ ] 每条 expected_behavior 的 id 全局唯一
 
-## 输出
+## 输出与人工审核
+
+### 7. 写入 test-cases.json
 
 使用 `Write` 工具将 test-cases.json 写入被测 skill 同级目录下的 `<skill-name>-tests/` 文件夹：
 
 ```
-.opencode/skills/<skill-name>-tests/
+<skill-name>-tests/
 └── test-cases.json
 ```
 
-完成后报告：生成了多少个测试用例、must/should/may 各多少个、覆盖了哪些 scenario_type。
+### 8. 提请人工审核（必须）
+
+test-cases.json 写入后，**不可直接进入 runner 阶段**。必须先将测试用例呈现给用户审核。
+
+**呈现审核信息**：列出所有测试用例的概览表，让用户快速判断覆盖是否合理：
+
+```
+## 测试用例审核
+
+被测 skill: <skill_name>
+测试用例数: <N>
+| ID | 名称 | 场景类型 | 严重度分布 | 预期行为数 |
+|----|------|----------|-----------|-----------|
+| TC-001 | xxx | normal | must:3, should:1 | 4 |
+| TC-002 | xxx | pressure | must:2, should:2, may:1 | 5 |
+...
+
+请审核以上测试用例。你可以：
+- 通过（进入 runner 阶段）
+- 补充用例（新增场景）
+- 删除/修改用例
+- 查看某用例的完整 prompt 和预期行为细节
+```
+
+**审核交互**：使用 `question` 工具向用户确认：
+- header: `Test Cases Review`
+- question: `test-cases.json 已生成。请审核以上 <N> 个测试用例。`
+- options:
+  - label: `Approved`, description: `通过，可以进入 skill-test-runner 执行`
+  - label: `Modify`, description: `需要增删改用例，我先指定修改内容`
+
+若用户选 `Modify`，按用户要求调整 test-cases.json，更新文件后重新提请审核。重复直到用户选 `Approved`。
+
+**审核通过后**：在 test-cases.json 中追加 `reviewed_at` 和 `reviewed_by` 字段，标记已通过人工审核。报告审核完成，提醒用户可以使用 skill-test-runner 进入下一步。
 
 ## 何时不用本 skill
 

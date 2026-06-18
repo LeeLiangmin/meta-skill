@@ -1,7 +1,10 @@
 .opencode/
+.mimocode 
 __pycache__/
 *.pyc
 docs/compose/
 skill-digest-eval/
 skill-digest-eval-v2/
 run-results/
+
+

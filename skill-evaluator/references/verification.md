@@ -18,6 +18,10 @@
 
 独立性是校验的全部价值。所以给 subagent 的信息要满足：**只给原始来源片段 + 一个精确的是非问题，绝不告诉它你的结论或你倾向的答案。** 否则它只会附和你。
 
+**平台适配**：
+- **OpenCode**：通过 `task` 工具派发校验任务给专用 subagent（`agents/evaluator-verifier.md`，install.sh 安装到 `.opencode/agents/`。只读、禁 bash）。child session 完成后其产出在约定路径读取。
+- **Claude Code / MiMoCode**：使用 `actor` 工具 spawn 独立 subagent，只给原始材料和非问题。
+
 subagent 提示词模板：
 
 ```
